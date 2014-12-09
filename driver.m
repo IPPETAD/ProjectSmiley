@@ -16,50 +16,13 @@ function img = new_image(image, class, name)
 end
 
 
-% Parse class index from filename
+% Parse filename to get the class number
 function index = getClassIndex(fileName)
  index =  str2num(regexprep (fileName, '\D+', '$1 '));
 end
 
-% Loads all images from each file. Performs transformations to images.
-%
-% NOTE: Loads a lot of data into memory at once. May not want this as helper
-% function.
-function images = get_all_images(file_id)
-	global class_names;
-	images = [];
-	files = dir(strcat('Data/', file_id, '*.png'));
-	names = {files.name}';
-	w = waitbar(0, 'Loading images');
-	for i=1:size(names,1)
-		class_index = getClassIndex(names{i});
-		original_images = splitImages(strcat("Data/", names{i}));
-		for j=1:size(original_images,1)
-			for k=1:size(original_images,2)
-				current_image = new_image(original_images{j,k}, class_names{class_index}, sprintf("%s_%d_%d", names{i}, j,k)); %Create new image
-				transformed_images = all_training_transformations([current_image]);%get a this image and all of its transformations
-				images = [ images, transformed_images];%concat to main list
-%				images = [ images, current_image];
-			end
-		end
-		waitbar((i/size(names,1)), w, strcat('Loading: ', num2str(100*i/size(names,1)),'%'));
-	end
-	close(w);
-end
-
-
-to = time();
-disp('Loading all images. This could take several minutes.');
-fflush(stdout);
-images = get_all_images('Training');
-disp('Loading complete! Extracting features. This will take forever.');
-fflush(stdout);
-
-h = waitbar(0, 'Extracting features');
-fflush(stdout);
-fid = fopen('nn_data.csv', 'w');
-for i=1:length(images)
-	features = preprocess(images(i).img, 6);
+function line = image_to_csv_line(image)
+	features = preprocess(image.img, 6);
 	line = [];
 	
 	for fi=1:size(features,2),
@@ -78,17 +41,55 @@ for i=1:length(images)
 
 	%line = [line, reshape(images(i).img(:,:,1)', [], 1)']; 
 
-	for li=1:size(images(i).img,1),
-		line = [line, images(i).img(li,:)];
+	for li=1:size(image.img,1),
+		line = [line, image.img(li,:)];
 	endfor
-	line(end+1) = find(ismember(class_names, images(i).class));
-	csvwrite(fid, line);
-	waitbar((i/length(images)), h, strcat('Extracting: ',num2str(100*i/length(images)),'%'));
+	line(end+1) = image.class; %no point in taking a number converting it into a string i.e :) then converting it back to the same number
 end
-close(h);
-fclose(fid);
 
-disp('Preprocessing complete! Input data can be found in nn_data.csv.');
+function convert_images_to_csv(file_id)
+	global class_names;
+	fid = fopen(strcat('nn_data_', file_id, '.csv'), 'w');
+	
+	images = [];
+	files = dir(strcat('Data/', file_id, '*.png'));
+	names = {files.name}';  %'
+	
+	full_image_count = 36 * 13 * 10 * 18;
+	finished_images = 1;
+	iLines = 1;
+	for i=1:size(names,1)
+		
+		original_images = splitImages(strcat("Data/", names{i}));
+		
+		class_index = getClassIndex(names{i});
+		
+		for j=1:size(original_images,1)
+			for k=1:size(original_images,2)
+				
+				current_image = new_image(original_images{j,k}, class_index, sprintf("%s_%d_%d", names{i}, j,k)); %Create new image
+				transformed_images = all_training_transformations([current_image]);%get a this image and all of its transformations
+				
+				for l=1:size(transformed_images, 2)
+					lines(iLines++,:) = image_to_csv_line( transformed_images(l) );
+					disp(strcat( 'Done: ', num2str(finished_images++), '/', num2str(full_image_count)))
+					if( iLines == 1000 ) % a(i,j) in  octave becomes [i + nc*j] for the index. The max size is then sizeof(int) 
+										 % which is 4 bytes. It turns out that when iLines = 1303 we exceed 4 bytes for our index. 
+										 % I am capping it at 1000 because it is nice looking
+										 
+						csvwrite(fid, lines);
+						
+						iLines = 1; %resetting iLines (the index)
+						lines = [] %resetting the array	
+					end
+				end
+			end
+		end
+	end
+	fclose(fid);
+end
 
+to = time();
+convert_images_to_csv('Training')
 tf = time();
-disp(strcat('This only took ', num2str(tf-to), ' ms!'));
+disp(strcat('This only took ', num2str(tf-to), ' s!'));						
