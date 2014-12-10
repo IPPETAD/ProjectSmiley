@@ -33,6 +33,10 @@ def read_data(filename):
 
 	features = [[float(f) for f in line[0:-1]] for line in data_lines]
 	classes = [[int(line[-1])] for line in data_lines]
+        # Workaround to make classifications zero-based
+        class_min = min([c[0] for c in classes])
+        for i in range(len(classes)):
+                classes[i][0] -= class_min
 
 	data_set = ClassificationDataSet(len(features[0]))
 	for feature_vector, classification in zip(features, classes):
